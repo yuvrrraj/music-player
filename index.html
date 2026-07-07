@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Music Player</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      font-family: 'Segoe UI', sans-serif;
+      overflow: hidden;
+    }
+
+    #upload-area {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #fff;
+      transition: opacity 0.4s;
+      z-index: 10;
+    }
+
+    #upload-area.hidden { opacity: 0; pointer-events: none; }
+
+    #upload-area h1 { font-size: 2rem; margin-bottom: 10px; letter-spacing: 2px; display:flex; align-items:center; justify-content:center; gap:10px; }
+    .icon { display:inline-flex; align-items:center; justify-content:center; vertical-align:middle; }
+    .ctrl-btn svg, .mute-btn svg, .duo-mute svg, .close-btn svg { pointer-events:none; }
+    #upload-area p { color: #aaa; margin-bottom: 24px; }
+    #file-input { display: none; }
+
+    .upload-btn {
+      display: inline-block;
+      padding: 12px 28px;
+      background: linear-gradient(135deg, #a855f7, #6366f1);
+      color: #fff;
+      border-radius: 50px;
+      cursor: pointer;
+      font-size: 1rem;
+      border: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 20px rgba(168,85,247,0.4);
+    }
+
+    .upload-btn:hover { transform: scale(1.05); box-shadow: 0 6px 28px rgba(168,85,247,0.6); }
+
+    #add-more {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      display: none;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* Player Card */
+    .player-card {
+      position: fixed;
+      width: 300px;
+      background: rgba(255,255,255,0.07);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 16px;
+      padding: 16px;
+      color: #fff;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      user-select: none;
+      z-index: 50;
+      transition: box-shadow 0.2s;
+    }
+
+    .player-card:hover { box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: grab;
+      margin-bottom: 10px;
+    }
+
+    .card-header:active { cursor: grabbing; }
+
+    .song-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 220px;
+      color: #e2d9f3;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: #aaa;
+      font-size: 1.1rem;
+      cursor: pointer;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 50%;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .close-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
+
+    .visualizer {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 28px;
+      margin-bottom: 10px;
+      justify-content: center;
+    }
+
+    .bar {
+      width: 4px;
+      background: linear-gradient(to top, #a855f7, #6366f1);
+      border-radius: 2px;
+      height: 4px;
+    }
+
+    .playing .bar { animation: bounce 0.6s ease-in-out infinite alternate; }
+    .bar:nth-child(2) { animation-delay: 0.1s; }
+    .bar:nth-child(3) { animation-delay: 0.2s; }
+    .bar:nth-child(4) { animation-delay: 0.15s; }
+    .bar:nth-child(5) { animation-delay: 0.05s; }
+    .bar:nth-child(6) { animation-delay: 0.25s; }
+    .bar:nth-child(7) { animation-delay: 0.1s; }
+
+    @keyframes bounce {
+      from { height: 4px; }
+      to { height: 24px; }
+    }
+
+    .seek-wrap { margin-bottom: 8px; }
+
+    .time-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.7rem;
+      color: #aaa;
+      margin-bottom: 4px;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.2);
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #a855f7;
+      cursor: pointer;
+      box-shadow: 0 0 6px rgba(168,85,247,0.8);
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .ctrl-btn {
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 1.3rem;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 50%;
+      transition: background 0.2s, transform 0.15s;
+      line-height: 1;
+    }
+
+    .ctrl-btn:hover { background: rgba(255,255,255,0.12); transform: scale(1.1); }
+
+    .play-btn {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #a855f7, #6366f1) !important;
+      font-size: 1.1rem !important;
+      box-shadow: 0 4px 14px rgba(168,85,247,0.5);
+    }
+
+    .play-btn:hover { transform: scale(1.12) !important; }
+
+    .volume-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mute-btn {
+      background: none;
+      border: none;
+      color: #aaa;
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 2px;
+      transition: color 0.2s;
+    }
+
+    .mute-btn:hover { color: #fff; }
+    .vol-bar { flex: 1; accent-color: #6366f1; }
+
+    .player-card.duo-selectable {
+      cursor: pointer;
+      border: 1px solid rgba(245,158,11,0.5);
+      box-shadow: 0 0 0 2px rgba(245,158,11,0.3), 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .player-card.duo-selected {
+      border: 1px solid #f59e0b;
+      box-shadow: 0 0 0 3px rgba(245,158,11,0.7), 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    #duo-mode-hint {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      color: #fff;
+      padding: 10px 22px;
+      border-radius: 50px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      z-index: 200;
+      display: none;
+      gap: 12px;
+      align-items: center;
+    }
+
+    #duo-cancel-btn {
+      background: rgba(0,0,0,0.25);
+      border: none;
+      color: #fff;
+      border-radius: 50px;
+      padding: 3px 10px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+
+    /* ── Duo Card ── */
+    .duo-card {
+      position: fixed;
+      width: 500px;
+      background: rgba(255,255,255,0.07);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 18px;
+      padding: 18px;
+      color: #fff;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      user-select: none;
+      z-index: 50;
+    }
+
+    .duo-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: grab;
+      margin-bottom: 14px;
+    }
+
+    .duo-header:active { cursor: grabbing; }
+
+    .duo-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .duo-tracks {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .duo-track {
+      flex: 1;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 10px;
+    }
+
+    .duo-track-name {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #e2d9f3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 8px;
+    }
+
+    .duo-track-name .track-tag {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: #fff;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-right: 5px;
+    }
+
+    .duo-time-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.65rem;
+      color: #aaa;
+      margin-bottom: 3px;
+    }
+
+    .duo-vol-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .duo-mute {
+      background: none;
+      border: none;
+      color: #aaa;
+      font-size: 0.9rem;
+      cursor: pointer;
+      padding: 0;
+      transition: color 0.2s;
+    }
+
+    .duo-mute:hover { color: #fff; }
+
+    .duo-visualizers {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .duo-viz {
+      flex: 1;
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 22px;
+      justify-content: center;
+    }
+
+    .duo-viz .bar {
+      width: 3px;
+      background: linear-gradient(to top, #f59e0b, #ef4444);
+    }
+
+    .duo-viz.playing .bar { animation: bounce 0.6s ease-in-out infinite alternate; }
+
+    .duo-controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+    }
+
+    .duo-play-btn {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #f59e0b, #ef4444) !important;
+      font-size: 1.1rem !important;
+      box-shadow: 0 4px 14px rgba(245,158,11,0.5);
+    }
+
+    .duo-compact-btn {
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: #fff;
+      font-size: 0.75rem;
+      cursor: pointer;
+      padding: 3px 8px;
+      border-radius: 20px;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+
+    .duo-compact-btn:hover { background: rgba(255,255,255,0.2); }
+
+    .duo-card.compact .duo-visualizers,
+    .duo-card.compact .duo-tracks { display: none; }
+
+    .duo-card.compact { width: auto !important; min-width: 260px; }
+
+    .duo-header-left { display: flex; align-items: center; gap: 8px; }
+
+    .resize-handle {
+      position: absolute;
+      bottom: 6px;
+      right: 6px;
+      width: 14px;
+      height: 14px;
+      cursor: nwse-resize;
+      opacity: 0.35;
+      transition: opacity 0.2s;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14'%3E%3Cpath d='M2 12 L12 2 M6 12 L12 6 M10 12 L12 10' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat center;
+    }
+
+    .player-card:hover .resize-handle,
+    .duo-card:hover .resize-handle { opacity: 0.8; }
+
+    .player-card, .duo-card { overflow: hidden; }
+
+    /* ── Save / Load ── */
+    #save-load-bar {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      display: none;
+      gap: 8px;
+      z-index: 300;
+    }
+
+    .sl-btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .sl-btn:hover { transform: scale(1.05); }
+
+    #save-btn { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 4px 14px rgba(34,197,94,0.4); }
+    #load-btn { background: rgba(255,255,255,0.12); color: #fff; backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.2); }
+
+    /* sessions panel */
+    #sessions-panel {
+      position: fixed;
+      top: 56px;
+      right: 16px;
+      width: 300px;
+      background: rgba(20,18,40,0.97);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 14px;
+      padding: 14px;
+      color: #fff;
+      z-index: 300;
+      display: none;
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+
+    #sessions-panel h3 { font-size: 0.85rem; margin-bottom: 10px; color: #a78bfa; letter-spacing: 1px; }
+
+    .session-item {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .session-item:hover { background: rgba(255,255,255,0.12); }
+
+    .session-item-name { font-size: 0.82rem; font-weight: 600; margin-bottom: 4px; }
+
+    .session-item-meta { font-size: 0.7rem; color: #888; display: flex; justify-content: space-between; align-items: center; }
+
+    .session-delete {
+      background: none;
+      border: none;
+      color: #ef4444;
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+
+    .session-delete:hover { background: rgba(239,68,68,0.15); }
+
+    .session-tracks { font-size: 0.7rem; color: #aaa; margin-top: 4px; }
+
+    #save-name-wrap {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    #save-name-input {
+      flex: 1;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      color: #fff;
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      outline: none;
+    }
+
+    #save-name-input::placeholder { color: #666; }
+
+    #save-confirm-btn {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      border: none;
+      color: #fff;
+      border-radius: 8px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(30,27,60,0.95);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 50px;
+      font-size: 0.82rem;
+      z-index: 500;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <div id="upload-area">
+    <h1><svg class="icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Music Player</h1>
+    <p>Upload audio files or restore a saved session</p>
+    <label class="upload-btn" for="file-input">
+      <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Choose Audio Files</label>
+    <input type="file" id="file-input" accept="audio/*" multiple />
+    <div style="margin-top:16px;">
+      <button id="load-sessions-home-btn" class="upload-btn" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);font-size:0.9rem;padding:10px 22px;display:inline-flex;align-items:center;gap:8px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Load from Sessions
+      </button>
+    </div>
+  </div>
+
+  <div id="add-more">
+    <label class="upload-btn" for="file-input-more" style="font-size:0.85rem; padding:10px 22px;">
+      <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-right:5px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add More Files</label>
+    <input type="file" id="file-input-more" accept="audio/*" multiple style="display:none;" />
+    <button id="duo-mode-btn" class="upload-btn" style="font-size:0.85rem; padding:10px 22px; background:linear-gradient(135deg,#f59e0b,#ef4444); box-shadow:0 4px 20px rgba(245,158,11,0.4); border:none; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>Duo Mode</button>
+  </div>
+
+  <div id="save-load-bar">
+    <button class="sl-btn" id="save-btn" style="display:inline-flex;align-items:center;gap:6px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save Layout</button>
+    <button class="sl-btn" id="load-btn" style="display:inline-flex;align-items:center;gap:6px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>My Sessions</button>
+  </div>
+
+  <div id="sessions-panel">
+    <h3 style="display:flex;align-items:center;gap:6px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      SAVED SESSIONS</h3>
+    <div id="save-name-wrap">
+      <input id="save-name-input" type="text" placeholder="Session name..." />
+      <button id="save-confirm-btn">Save</button>
+    </div>
+    <div id="sessions-list"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div id="duo-mode-hint">
+    <span id="duo-hint-text">Click 2 songs to pair them — 0/2 selected</span>
+    <button id="duo-cancel-btn" style="display:inline-flex;align-items:center;gap:4px;">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Cancel</button>
+  </div>
+
+  <script>
+    let cardCount = 0;
+
+    // ── SVG Icons ──
+    const SVG = {
+      close:    `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+      play:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>`,
+      pause:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`,
+      skipBack: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19,20 9,12 19,4"/><line x1="5" y1="19" x2="5" y2="5"/></svg>`,
+      skipFwd:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>`,
+      volOn:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`,
+      volOff:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`,
+      duo:      `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>`,
+      mini:     `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+      expand:   `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+      folder:   `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
+      trash:    `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`,
+      save:     `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`,
+      upload:   `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
+      warn:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+      check:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+      error:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+      restore:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>`
+    };
+
+    // ── Supabase ──
+    const { createClient } = supabase;
+    const sb = createClient(
+      'https://tighmtqdhlzyinoiczae.supabase.co',
+      'sb_publishable_EmgY_TQJ7MnEnSxPFm7tXA_LHagKzl4'
+    );
+
+    function showToast(msg, duration = 2500) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), duration);
+    }
+
+    // ── Upload file to Supabase storage ──
+    async function uploadToStorage(file) {
+      const path = `tracks/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const { error } = await sb.storage.from('audio-files').upload(path, file, { upsert: false });
+      if (error) { showToast(SVG.warn + ' Upload failed: ' + error.message); return null; }
+      return path;
+    }
+
+    function getStorageUrl(path) {
+      const { data } = sb.storage.from('audio-files').getPublicUrl(path);
+      return data.publicUrl;
+    }
+
+    // collect current layout state
+    function collectLayout() {
+      const cards = [];
+      document.querySelectorAll('.player-card').forEach(card => {
+        cards.push({
+          type: 'single',
+          name: card.querySelector('.song-title').textContent,
+          left: card.style.left,
+          top: card.style.top,
+          width: card.style.width || '300px',
+          height: card.style.height || '',
+          volume: card.querySelector('.vol-bar').value,
+          storagePath: card._storagePath || null
+        });
+      });
+      document.querySelectorAll('.duo-card').forEach(card => {
+        const names = card.querySelectorAll('.duo-track-name');
+        const nameA = names[0] ? names[0].childNodes[names[0].childNodes.length - 1].textContent.trim() : '';
+        const nameB = names[1] ? names[1].childNodes[names[1].childNodes.length - 1].textContent.trim() : '';
+        cards.push({
+          type: 'duo',
+          nameA,
+          nameB,
+          left: card.style.left,
+          top: card.style.top,
+          width: card.style.width || '500px',
+          height: card.style.height || '',
+          compact: card.classList.contains('compact'),
+          volA: card.querySelector('.vol-a').value,
+          volB: card.querySelector('.vol-b').value,
+          storagePathA: card._storagePathA || null,
+          storagePathB: card._storagePathB || null
+        });
+      });
+      return cards;
+    }
+
+    async function saveLayout() {
+      const name = document.getElementById('save-name-input').value.trim() || 'Session ' + new Date().toLocaleString();
+      const layout = collectLayout();
+      if (!layout.length) { showToast(SVG.warn + ' No cards to save'); return; }
+      const btn = document.getElementById('save-confirm-btn');
+      btn.textContent = 'Saving...';
+      const { error } = await sb.from('player_sessions').insert({ name, layout });
+      btn.textContent = 'Save';
+      if (error) { showToast(SVG.error + ' Save failed: ' + error.message); return; }
+      showToast(SVG.check + ' Layout saved!');
+      document.getElementById('save-name-input').value = '';
+      loadSessionsList();
+    }
+
+    async function loadSessionsList() {
+      const list = document.getElementById('sessions-list');
+      list.innerHTML = '<div style="color:#666;font-size:0.78rem;text-align:center;padding:10px">Loading...</div>';
+      const { data, error } = await sb.from('player_sessions').select('*').order('created_at', { ascending: false });
+      if (error) { list.innerHTML = '<div style="color:#ef4444;font-size:0.78rem">Failed to load sessions</div>'; return; }
+      if (!data.length) { list.innerHTML = '<div style="color:#666;font-size:0.78rem;text-align:center;padding:10px">No saved sessions yet</div>'; return; }
+      list.innerHTML = '';
+      data.forEach(session => {
+        const singles = session.layout.filter(c => c.type === 'single');
+        const duos = session.layout.filter(c => c.type === 'duo');
+        const trackSummary = [
+          ...singles.map(c => c.name),
+          ...duos.map(c => `[Duo: ${c.nameA} + ${c.nameB}]`)
+        ].join(', ');
+        const date = new Date(session.created_at).toLocaleString();
+        const item = document.createElement('div');
+        item.className = 'session-item';
+        item.innerHTML = `
+          <div class="session-item-name">${session.name}</div>
+          <div class="session-tracks">${trackSummary || 'No tracks'}</div>
+          <div class="session-item-meta">
+            <span>${date}</span>
+            <button class="session-delete" data-id="${session.id}" style="display:inline-flex;align-items:center;gap:4px;">${SVG.trash} Delete</button>
+          </div>
+        `;
+        item.addEventListener('click', (e) => {
+          if (e.target.classList.contains('session-delete')) return;
+          restoreLayout(session);
+        });
+        item.querySelector('.session-delete').addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await sb.from('player_sessions').delete().eq('id', session.id);
+          showToast(SVG.trash + ' Session deleted');
+          loadSessionsList();
+        });
+        list.appendChild(item);
+      });
+    }
+
+    async function restoreLayout(session) {
+      const panel = document.getElementById('sessions-panel');
+      panel.style.display = 'none';
+      panel.style.transform = '';
+      panel.style.top = '56px';
+      panel.style.left = '';
+
+      document.querySelectorAll('.player-card, .duo-card').forEach(c => c.remove());
+      cardCount = 0;
+      document.getElementById('upload-area').classList.add('hidden');
+      document.getElementById('add-more').style.display = 'flex';
+      document.getElementById('save-load-bar').style.display = 'flex';
+
+      showToast(SVG.restore + ' Restoring session...');
+
+      for (const item of session.layout) {
+        if (item.type === 'single') {
+          if (item.storagePath) {
+            await restorePlayerFromStorage(item);
+          } else {
+            createGhostPlayer(item);
+          }
+        } else if (item.type === 'duo') {
+          if (item.storagePathA && item.storagePathB) {
+            await restoreDuoFromStorage(item);
+          } else {
+            createGhostDuo(item);
+          }
+        }
+      }
+      showToast(SVG.check + ' Session restored!');
+    }
+
+    async function restorePlayerFromStorage(item) {
+      const url = getStorageUrl(item.storagePath);
+      const audio = new Audio(url);
+      const card = document.createElement('div');
+      card.className = 'player-card';
+      card.style.left = item.left;
+      card.style.top = item.top;
+      if (item.width) card.style.width = item.width;
+      if (item.height) card.style.height = item.height;
+      card._storagePath = item.storagePath;
+      cardCount++;
+
+      card.innerHTML = `
+        <div class="card-header">
+          <span class="song-title" title="${item.name}">${item.name}</span>
+          <button class="close-btn">${SVG.close}</button>
+        </div>
+        <div class="visualizer">
+          ${Array(7).fill('<div class="bar"></div>').join('')}
+        </div>
+        <div class="seek-wrap">
+          <div class="time-row">
+            <span class="current-time">0:00</span>
+            <span class="duration">0:00</span>
+          </div>
+          <input type="range" class="seek-bar" min="0" value="0" step="0.1" />
+        </div>
+        <div class="controls">
+          <button class="ctrl-btn skip-back">${SVG.skipBack}</button>
+          <button class="ctrl-btn play-btn">${SVG.play}</button>
+          <button class="ctrl-btn skip-fwd">${SVG.skipFwd}</button>
+        </div>
+        <div class="volume-row">
+          <button class="mute-btn">${SVG.volOn}</button>
+          <input type="range" class="vol-bar" min="0" max="1" step="0.01" value="${item.volume || 1}" />
+        </div>
+      `;
+      document.body.appendChild(card);
+
+      const playBtn = card.querySelector('.play-btn');
+      const seekBar = card.querySelector('.seek-bar');
+      const volBar = card.querySelector('.vol-bar');
+      const muteBtn = card.querySelector('.mute-btn');
+      const currentTimeEl = card.querySelector('.current-time');
+      const durationEl = card.querySelector('.duration');
+      const visualizer = card.querySelector('.visualizer');
+
+      audio.volume = parseFloat(item.volume || 1);
+
+      audio.addEventListener('loadedmetadata', () => {
+        seekBar.max = audio.duration;
+        durationEl.textContent = formatTime(audio.duration);
+      });
+      audio.addEventListener('timeupdate', () => {
+        seekBar.value = audio.currentTime;
+        currentTimeEl.textContent = formatTime(audio.currentTime);
+        const pct = (audio.currentTime / audio.duration) * 100 || 0;
+        seekBar.style.background = `linear-gradient(to right, #a855f7 ${pct}%, rgba(255,255,255,0.2) ${pct}%)`;
+      });
+      audio.addEventListener('ended', () => { playBtn.innerHTML = SVG.play; visualizer.classList.remove('playing'); });
+
+      playBtn.addEventListener('click', () => {
+        if (audio.paused) { audio.play(); playBtn.innerHTML = SVG.pause; visualizer.classList.add('playing'); }
+        else { audio.pause(); playBtn.innerHTML = SVG.play; visualizer.classList.remove('playing'); }
+      });
+      seekBar.addEventListener('input', () => { audio.currentTime = seekBar.value; });
+      card.querySelector('.skip-back').addEventListener('click', () => { audio.currentTime = Math.max(0, audio.currentTime - 10); });
+      card.querySelector('.skip-fwd').addEventListener('click', () => { audio.currentTime = Math.min(audio.duration, audio.currentTime + 10); });
+      volBar.addEventListener('input', () => { audio.volume = volBar.value; audio.muted = false; muteBtn.innerHTML = volBar.value == 0 ? SVG.volOff : SVG.volOn; });
+      muteBtn.addEventListener('click', () => { audio.muted = !audio.muted; muteBtn.innerHTML = audio.muted ? SVG.volOff : SVG.volOn; });
+      card.querySelector('.close-btn').addEventListener('click', () => { audio.pause(); card.remove(); checkEmpty(); });
+
+      makeDraggable(card, card.querySelector('.card-header'));
+      makeResizable(card, 220, 180, 500, 400);
+
+      card.addEventListener('click', (e) => {
+        if (!duoMode) return;
+        if (duoSelected.includes(card)) { duoSelected = duoSelected.filter(c => c !== card); card.classList.remove('duo-selected'); }
+        else if (duoSelected.length < 2) { duoSelected.push(card); card.classList.add('duo-selected'); }
+        document.getElementById('duo-hint-text').textContent = `Click 2 songs to pair them — ${duoSelected.length}/2 selected`;
+        if (duoSelected.length === 2) {
+          const [cA, cB] = duoSelected; exitDuoMode();
+          cA.querySelector('.close-btn').click(); cB.querySelector('.close-btn').click();
+          createDuoPlayer({ name: item.name }, { name: '' }, item.storagePath, null);
+        }
+      });
+    }
+
+    async function restoreDuoFromStorage(item) {
+      const urlA = getStorageUrl(item.storagePathA);
+      const urlB = getStorageUrl(item.storagePathB);
+      const audioA = new Audio(urlA);
+      const audioB = new Audio(urlB);
+
+      const card = document.createElement('div');
+      card.className = 'duo-card' + (item.compact ? ' compact' : '');
+      card.style.left = item.left;
+      card.style.top = item.top;
+      if (item.width) card.style.width = item.width;
+      if (item.height) card.style.height = item.height;
+      card._storagePathA = item.storagePathA;
+      card._storagePathB = item.storagePathB;
+      cardCount++;
+
+      card.innerHTML = `
+        <div class="duo-header">
+          <div class="duo-header-left">
+            <span class="duo-label">${SVG.duo} Duo Mode</span>
+            <button class="duo-compact-btn">${item.compact ? SVG.expand + ' Full' : SVG.mini + ' Mini'}</button>
+          </div>
+          <button class="close-btn">${SVG.close}</button>
+        </div>
+        <div class="duo-visualizers">
+          <div class="duo-viz viz-a">${Array(6).fill('<div class="bar"></div>').join('')}</div>
+          <div class="duo-viz viz-b">${Array(6).fill('<div class="bar"></div>').join('')}</div>
+        </div>
+        <div class="duo-tracks">
+          <div class="duo-track">
+            <div class="duo-track-name"><span class="track-tag">A</span>${item.nameA || 'Track A'}</div>
+            <div class="time-row"><span class="ct-a">0:00</span><span class="dur-a">0:00</span></div>
+            <input type="range" class="seek-bar seek-a" min="0" value="0" step="0.1" />
+            <div class="duo-vol-row">
+              <button class="duo-mute mute-a">${SVG.volOn}</button>
+              <input type="range" class="vol-bar vol-a" min="0" max="1" step="0.01" value="${item.volA || 1}" />
+            </div>
+          </div>
+          <div class="duo-track">
+            <div class="duo-track-name"><span class="track-tag">B</span>${item.nameB || 'Track B'}</div>
+            <div class="time-row"><span class="ct-b">0:00</span><span class="dur-b">0:00</span></div>
+            <input type="range" class="seek-bar seek-b" min="0" value="0" step="0.1" />
+            <div class="duo-vol-row">
+              <button class="duo-mute mute-b">${SVG.volOn}</button>
+              <input type="range" class="vol-bar vol-b" min="0" max="1" step="0.01" value="${item.volB || 1}" />
+            </div>
+          </div>
+        </div>
+        <div class="duo-controls">
+          <button class="ctrl-btn skip-back-duo">${SVG.skipBack}</button>
+          <button class="ctrl-btn play-btn duo-play-btn">${SVG.play}</button>
+          <button class="ctrl-btn skip-fwd-duo">${SVG.skipFwd}</button>
+        </div>
+      `;
+      document.body.appendChild(card);
+
+      const playBtn = card.querySelector('.duo-play-btn');
+      const vizA = card.querySelector('.viz-a'), vizB = card.querySelector('.viz-b');
+      const seekA = card.querySelector('.seek-a'), seekB = card.querySelector('.seek-b');
+      const volA = card.querySelector('.vol-a'), volB = card.querySelector('.vol-b');
+      const muteA = card.querySelector('.mute-a'), muteB = card.querySelector('.mute-b');
+      const ctA = card.querySelector('.ct-a'), ctB = card.querySelector('.ct-b');
+      const durA = card.querySelector('.dur-a'), durB = card.querySelector('.dur-b');
+
+      audioA.volume = parseFloat(item.volA || 1);
+      audioB.volume = parseFloat(item.volB || 1);
+      let playing = false;
+
+      function setPlaying(val) {
+        playing = val; playBtn.innerHTML = val ? SVG.pause : SVG.play;
+        vizA.classList.toggle('playing', val); vizB.classList.toggle('playing', val);
+      }
+
+      audioA.addEventListener('loadedmetadata', () => { seekA.max = audioA.duration; durA.textContent = formatTime(audioA.duration); });
+      audioB.addEventListener('loadedmetadata', () => { seekB.max = audioB.duration; durB.textContent = formatTime(audioB.duration); });
+      audioA.addEventListener('timeupdate', () => {
+        seekA.value = audioA.currentTime; ctA.textContent = formatTime(audioA.currentTime);
+        const pct = (audioA.currentTime / audioA.duration) * 100 || 0;
+        seekA.style.background = `linear-gradient(to right, #f59e0b ${pct}%, rgba(255,255,255,0.2) ${pct}%)`;
+      });
+      audioB.addEventListener('timeupdate', () => {
+        seekB.value = audioB.currentTime; ctB.textContent = formatTime(audioB.currentTime);
+        const pct = (audioB.currentTime / audioB.duration) * 100 || 0;
+        seekB.style.background = `linear-gradient(to right, #ef4444 ${pct}%, rgba(255,255,255,0.2) ${pct}%)`;
+      });
+      audioA.addEventListener('ended', () => { if (audioB.ended) setPlaying(false); });
+      audioB.addEventListener('ended', () => { if (audioA.ended) setPlaying(false); });
+
+      playBtn.addEventListener('click', () => {
+        if (!playing) { audioA.play(); audioB.play(); setPlaying(true); }
+        else { audioA.pause(); audioB.pause(); setPlaying(false); }
+      });
+      card.querySelector('.skip-back-duo').addEventListener('click', () => {
+        audioA.currentTime = Math.max(0, audioA.currentTime - 10);
+        audioB.currentTime = Math.max(0, audioB.currentTime - 10);
+      });
+      card.querySelector('.skip-fwd-duo').addEventListener('click', () => {
+        audioA.currentTime = Math.min(audioA.duration, audioA.currentTime + 10);
+        audioB.currentTime = Math.min(audioB.duration, audioB.currentTime + 10);
+      });
+      seekA.addEventListener('input', () => { audioA.currentTime = seekA.value; });
+      seekB.addEventListener('input', () => { audioB.currentTime = seekB.value; });
+      volA.addEventListener('input', () => { audioA.volume = volA.value; audioA.muted = false; muteA.innerHTML = volA.value == 0 ? SVG.volOff : SVG.volOn; });
+      volB.addEventListener('input', () => { audioB.volume = volB.value; audioB.muted = false; muteB.innerHTML = volB.value == 0 ? SVG.volOff : SVG.volOn; });
+      muteA.addEventListener('click', () => { audioA.muted = !audioA.muted; muteA.innerHTML = audioA.muted ? SVG.volOff : SVG.volOn; });
+      muteB.addEventListener('click', () => { audioB.muted = !audioB.muted; muteB.innerHTML = audioB.muted ? SVG.volOff : SVG.volOn; });
+      card.querySelector('.close-btn').addEventListener('click', () => { audioA.pause(); audioB.pause(); card.remove(); checkEmpty(); });
+      card.querySelector('.duo-compact-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isCompact = card.classList.toggle('compact');
+        e.currentTarget.innerHTML = isCompact ? SVG.expand + ' Full' : SVG.mini + ' Mini';
+      });
+      makeDraggable(card, card.querySelector('.duo-header'), true);
+      makeResizable(card, 260, 80, 800, 600);
+    }
+
+    // Ghost player: shows position/size but prompts file re-select
+    function createGhostPlayer(item) {
+      const card = document.createElement('div');
+      card.className = 'player-card';
+      card.style.left = item.left;
+      card.style.top = item.top;
+      if (item.width) card.style.width = item.width;
+      if (item.height) card.style.height = item.height;
+      cardCount++;
+
+      card.innerHTML = `
+        <div class="card-header">
+          <span class="song-title" title="${item.name}">${item.name}</span>
+          <button class="close-btn">${SVG.close}</button>
+        </div>
+        <div style="text-align:center;padding:18px 0;">
+          <div style="font-size:0.72rem;color:#aaa;margin-bottom:10px;">Re-select file to play</div>
+          <label style="cursor:pointer;background:linear-gradient(135deg,#a855f7,#6366f1);padding:6px 14px;border-radius:50px;font-size:0.75rem;">
+            ${SVG.upload} Choose File
+            <input type="file" accept="audio/*" style="display:none;" class="ghost-file-input" />
+          </label>
+        </div>
+        <div class="volume-row" style="margin-top:8px;">
+          <button class="mute-btn">${SVG.volOn}</button>
+          <input type="range" class="vol-bar" min="0" max="1" step="0.01" value="${item.volume || 1}" />
+        </div>
+      `;
+      document.body.appendChild(card);
+
+      card.querySelector('.close-btn').addEventListener('click', () => { card.remove(); checkEmpty(); });
+      makeDraggable(card, card.querySelector('.card-header'));
+      makeResizable(card, 220, 180, 500, 400);
+
+      card.querySelector('.ghost-file-input').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const left = card.style.left, top = card.style.top;
+        const width = card.style.width, height = card.style.height;
+        const vol = parseFloat(card.querySelector('.vol-bar').value);
+        card.remove();
+        cardCount--;
+        await createPlayer(file);
+        const allCards = document.querySelectorAll('.player-card');
+        const nc = allCards[allCards.length - 1];
+        nc.style.left = left; nc.style.top = top;
+        if (width) nc.style.width = width;
+        if (height) nc.style.height = height;
+        nc.querySelector('.vol-bar').value = vol;
+        e.target.value = '';
+      });
+
+      card.addEventListener('click', (e) => {
+        if (!duoMode) return;
+        if (!card._file) { showToast(SVG.warn + ' Select a file first'); return; }
+        if (duoSelected.includes(card)) {
+          duoSelected = duoSelected.filter(c => c !== card);
+          card.classList.remove('duo-selected');
+        } else if (duoSelected.length < 2) {
+          duoSelected.push(card);
+          card.classList.add('duo-selected');
+        }
+        document.getElementById('duo-hint-text').textContent = `Click 2 songs to pair them \u2014 ${duoSelected.length}/2 selected`;
+        if (duoSelected.length === 2) {
+          const [cardA, cardB] = duoSelected;
+          exitDuoMode();
+          cardA.querySelector('.close-btn').click();
+          cardB.querySelector('.close-btn').click();
+          createDuoPlayer(cardA._file, cardB._file, cardA._storagePath || null, cardB._storagePath || null);
+        }
+      });
+    }
+
+    function createGhostDuo(item) {
+      const card = document.createElement('div');
+      card.className = 'duo-card' + (item.compact ? ' compact' : '');
+      card.style.left = item.left;
+      card.style.top = item.top;
+      if (item.width) card.style.width = item.width;
+      if (item.height) card.style.height = item.height;
+      cardCount++;
+
+      card.innerHTML = `
+        <div class="duo-header">
+          <div class="duo-header-left">
+            <span class="duo-label">${SVG.duo} Duo Mode</span>
+            <button class="duo-compact-btn">${item.compact ? SVG.expand + ' Full' : SVG.mini + ' Mini'}</button>
+          </div>
+          <button class="close-btn">${SVG.close}</button>
+        </div>
+        <div class="duo-tracks">
+          <div class="duo-track" style="text-align:center;">
+            <div class="duo-track-name"><span class="track-tag">A</span>${item.nameA || 'Track A'}</div>
+            <label style="cursor:pointer;background:linear-gradient(135deg,#f59e0b,#ef4444);padding:5px 10px;border-radius:50px;font-size:0.7rem;display:inline-block;margin-top:6px;">
+              ${SVG.upload} Choose
+              <input type="file" accept="audio/*" style="display:none;" class="ghost-a" />
+            </label>
+            <div class="duo-vol-row">
+              <button class="duo-mute mute-a">${SVG.volOn}</button>
+              <input type="range" class="vol-bar vol-a" min="0" max="1" step="0.01" value="${item.volA || 1}" />
+            </div>
+          </div>
+          <div class="duo-track" style="text-align:center;">
+            <div class="duo-track-name"><span class="track-tag">B</span>${item.nameB || 'Track B'}</div>
+            <label style="cursor:pointer;background:linear-gradient(135deg,#f59e0b,#ef4444);padding:5px 10px;border-radius:50px;font-size:0.7rem;display:inline-block;margin-top:6px;">
+              ${SVG.upload} Choose
+              <input type="file" accept="audio/*" style="display:none;" class="ghost-b" />
+            </label>
+            <div class="duo-vol-row">
+              <button class="duo-mute mute-b">${SVG.volOn}</button>
+              <input type="range" class="vol-bar vol-b" min="0" max="1" step="0.01" value="${item.volB || 1}" />
+            </div>
+          </div>
+        </div>
+        <div class="duo-controls">
+          <button class="ctrl-btn skip-back-duo">${SVG.skipBack}</button>
+          <button class="ctrl-btn play-btn duo-play-btn">${SVG.play}</button>
+          <button class="ctrl-btn skip-fwd-duo">${SVG.skipFwd}</button>
+        </div>
+      `;
+      document.body.appendChild(card);
+
+      let fileA = null, fileB = null;
+
+      function tryUpgrade() {
+        if (!fileA || !fileB) return;
+        const left = card.style.left, top = card.style.top;
+        const width = card.style.width, height = card.style.height;
+        const compact = card.classList.contains('compact');
+        const vA = card.querySelector('.vol-a').value;
+        const vB = card.querySelector('.vol-b').value;
+        card.remove();
+        cardCount--;
+        createDuoPlayer(fileA, fileB);
+        const nc = document.querySelectorAll('.duo-card')[document.querySelectorAll('.duo-card').length - 1];
+        nc.style.left = left; nc.style.top = top;
+        if (width) nc.style.width = width;
+        if (height) nc.style.height = height;
+        if (compact) { nc.classList.add('compact'); nc.querySelector('.duo-compact-btn').innerHTML = SVG.expand + ' Full'; }
+        nc.querySelector('.vol-a').value = vA;
+        nc.querySelector('.vol-b').value = vB;
+      }
+
+      card.querySelector('.ghost-a').addEventListener('change', (e) => { fileA = e.target.files[0]; e.target.value = ''; tryUpgrade(); });
+      card.querySelector('.ghost-b').addEventListener('change', (e) => { fileB = e.target.files[0]; e.target.value = ''; tryUpgrade(); });
+
+      card.querySelector('.close-btn').addEventListener('click', () => { card.remove(); checkEmpty(); });
+      card.querySelector('.duo-compact-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isCompact = card.classList.toggle('compact');
+        e.currentTarget.textContent = isCompact ? SVG.expand + ' Full' : SVG.mini + ' Mini';
+      });
+      makeDraggable(card, card.querySelector('.duo-header'), true);
+      makeResizable(card, 260, 80, 800, 600);
+    }
+
+    // toggle sessions panel
+    document.getElementById('load-btn').addEventListener('click', () => {
+      const panel = document.getElementById('sessions-panel');
+      const isOpen = panel.style.display === 'block';
+      panel.style.display = isOpen ? 'none' : 'block';
+      if (!isOpen) loadSessionsList();
+    });
+
+    document.getElementById('save-btn').addEventListener('click', () => {
+      const panel = document.getElementById('sessions-panel');
+      panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+      if (panel.style.display === 'block') loadSessionsList();
+    });
+
+    document.getElementById('save-confirm-btn').addEventListener('click', saveLayout);
+
+    function formatTime(s) {
+      if (isNaN(s)) return '0:00';
+      const m = Math.floor(s / 60);
+      const sec = Math.floor(s % 60);
+      return `${m}:${sec.toString().padStart(2, '0')}`;
+    }
+
+    let duoMode = false;
+    let duoSelected = [];
+
+    function makeResizable(el, minW, minH, maxW, maxH) {
+      const handle = document.createElement('div');
+      handle.className = 'resize-handle';
+      el.appendChild(handle);
+      handle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const startX = e.clientX, startY = e.clientY;
+        const startW = el.offsetWidth, startH = el.offsetHeight;
+        document.querySelectorAll('.player-card, .duo-card').forEach(c => c.style.zIndex = 50);
+        el.style.zIndex = 100;
+        const onMove = (e) => {
+          el.style.width  = Math.min(maxW, Math.max(minW, startW + e.clientX - startX)) + 'px';
+          el.style.height = Math.min(maxH, Math.max(minH, startH + e.clientY - startY)) + 'px';
+        };
+        const onUp = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    }
+
+    function makeDraggable(el, handle, ignoreDuoMode = false) {
+      let startX, startY, startLeft, startTop, dragged;
+      handle.addEventListener('mousedown', (e) => {
+        if (duoMode && !ignoreDuoMode) return;
+        e.preventDefault();
+        dragged = false;
+        startX = e.clientX; startY = e.clientY;
+        startLeft = el.offsetLeft; startTop = el.offsetTop;
+        document.querySelectorAll('.player-card, .duo-card').forEach(c => c.style.zIndex = 50);
+        el.style.zIndex = 100;
+        const onMove = (e) => {
+          dragged = true;
+          el.style.left = (startLeft + e.clientX - startX) + 'px';
+          el.style.top = (startTop + e.clientY - startY) + 'px';
+        };
+        const onUp = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    }
+
+    function enterDuoMode() {
+      const cards = document.querySelectorAll('.player-card');
+      if (cards.length < 2) { alert('You need at least 2 songs loaded to use Duo Mode.'); return; }
+      duoMode = true;
+      duoSelected = [];
+      cards.forEach(c => c.classList.add('duo-selectable'));
+      document.getElementById('duo-mode-hint').style.display = 'flex';
+      document.getElementById('duo-hint-text').textContent = 'Click 2 songs to pair them — 0/2 selected';
+    }
+
+    function exitDuoMode() {
+      duoMode = false;
+      duoSelected = [];
+      document.querySelectorAll('.player-card').forEach(c => {
+        c.classList.remove('duo-selectable', 'duo-selected');
+      });
+      document.getElementById('duo-mode-hint').style.display = 'none';
+    }
+
+    document.getElementById('duo-cancel-btn').addEventListener('click', exitDuoMode);
+    document.getElementById('duo-mode-btn').addEventListener('click', enterDuoMode);
+
+    function checkEmpty() {
+      if (document.querySelectorAll('.player-card, .duo-card').length === 0) {
+        document.getElementById('upload-area').classList.remove('hidden');
+        document.getElementById('add-more').style.display = 'none';
+        document.getElementById('save-load-bar').style.display = 'none';
+        document.getElementById('sessions-panel').style.display = 'none';
+        cardCount = 0;
+      }
+    }
+
+    async function createPlayer(file, storagePath = null) {
+      // upload to storage if not already uploaded
+      if (!storagePath) {
+        storagePath = await uploadToStorage(file);
+      }
+      const url = storagePath ? getStorageUrl(storagePath) : URL.createObjectURL(file);
+      const isObjectUrl = !storagePath;
+      const audio = new Audio(url);
+      const card = document.createElement('div');
+      card.className = 'player-card';
+      const offset = cardCount * 30;
+      card.style.left = (80 + offset) + 'px';
+      card.style.top = (80 + offset) + 'px';
+      card._file = file;
+      card._storagePath = storagePath;
+      cardCount++;
+
+      card.innerHTML = `
+        <div class="card-header">
+          <span class="song-title" title="${file.name}">${file.name.replace(/\.[^.]+$/, '')}</span>
+          <button class="close-btn">${SVG.close}</button>
+        </div>
+        <div class="visualizer">
+          ${Array(7).fill('<div class="bar"></div>').join('')}
+        </div>
+        <div class="seek-wrap">
+          <div class="time-row">
+            <span class="current-time">0:00</span>
+            <span class="duration">0:00</span>
+          </div>
+          <input type="range" class="seek-bar" min="0" value="0" step="0.1" />
+        </div>
+        <div class="controls">
+          <button class="ctrl-btn skip-back">${SVG.skipBack}</button>
+          <button class="ctrl-btn play-btn">${SVG.play}</button>
+          <button class="ctrl-btn skip-fwd">${SVG.skipFwd}</button>
+        </div>
+        <div class="volume-row">
+          <button class="mute-btn">${SVG.volOn}</button>
+          <input type="range" class="vol-bar" min="0" max="1" step="0.01" value="1" />
+        </div>
+      `;
+
+      document.body.appendChild(card);
+
+      const playBtn = card.querySelector('.play-btn');
+      const seekBar = card.querySelector('.seek-bar');
+      const volBar = card.querySelector('.vol-bar');
+      const muteBtn = card.querySelector('.mute-btn');
+      const currentTimeEl = card.querySelector('.current-time');
+      const durationEl = card.querySelector('.duration');
+      const visualizer = card.querySelector('.visualizer');
+
+      audio.addEventListener('loadedmetadata', () => {
+        seekBar.max = audio.duration;
+        durationEl.textContent = formatTime(audio.duration);
+      });
+
+      audio.addEventListener('timeupdate', () => {
+        seekBar.value = audio.currentTime;
+        currentTimeEl.textContent = formatTime(audio.currentTime);
+        const pct = (audio.currentTime / audio.duration) * 100 || 0;
+        seekBar.style.background = `linear-gradient(to right, #a855f7 ${pct}%, rgba(255,255,255,0.2) ${pct}%)`;
+      });
+
+      audio.addEventListener('ended', () => {
+        playBtn.innerHTML = SVG.play;
+        visualizer.classList.remove('playing');
+      });
+
+      playBtn.addEventListener('click', () => {
+        if (audio.paused) {
+          audio.play(); playBtn.innerHTML = SVG.pause;
+          visualizer.classList.add('playing');
+        } else {
+          audio.pause(); playBtn.innerHTML = SVG.play;
+          visualizer.classList.remove('playing');
+        }
+      });
+
+      seekBar.addEventListener('input', () => { audio.currentTime = seekBar.value; });
+      card.querySelector('.skip-back').addEventListener('click', () => { audio.currentTime = Math.max(0, audio.currentTime - 10); });
+      card.querySelector('.skip-fwd').addEventListener('click', () => { audio.currentTime = Math.min(audio.duration, audio.currentTime + 10); });
+
+      volBar.addEventListener('input', () => {
+        audio.volume = volBar.value;
+        audio.muted = false;
+        muteBtn.innerHTML = volBar.value == 0 ? SVG.volOff : SVG.volOn;
+      });
+
+      muteBtn.addEventListener('click', () => {
+        audio.muted = !audio.muted;
+        muteBtn.innerHTML = audio.muted ? SVG.volOff : SVG.volOn;
+      });
+
+      card.querySelector('.close-btn').addEventListener('click', () => {
+        audio.pause();
+        if (isObjectUrl) URL.revokeObjectURL(url);
+        card.remove();
+        checkEmpty();
+      });
+
+      const header = card.querySelector('.card-header');
+      makeDraggable(card, header);
+      makeResizable(card, 220, 180, 500, 400);
+
+      card.addEventListener('click', (e) => {
+        if (!duoMode) return;
+        if (duoSelected.includes(card)) {
+          duoSelected = duoSelected.filter(c => c !== card);
+          card.classList.remove('duo-selected');
+        } else if (duoSelected.length < 2) {
+          duoSelected.push(card);
+          card.classList.add('duo-selected');
+        }
+        document.getElementById('duo-hint-text').textContent = `Click 2 songs to pair them — ${duoSelected.length}/2 selected`;
+        if (duoSelected.length === 2) {
+          const [cardA, cardB] = duoSelected;
+          const fileA = cardA._file;
+          const fileB = cardB._file;
+          const spA = cardA._storagePath || null;
+          const spB = cardB._storagePath || null;
+          exitDuoMode();
+          cardA.querySelector('.close-btn').click();
+          cardB.querySelector('.close-btn').click();
+          createDuoPlayer(fileA, fileB, spA, spB);
+        }
+      });
+    }
+
+    async function createDuoPlayer(fileA, fileB, storagePathA = null, storagePathB = null) {
+      if (!storagePathA) storagePathA = await uploadToStorage(fileA);
+      if (!storagePathB) storagePathB = await uploadToStorage(fileB);
+
+      const urlA = storagePathA ? getStorageUrl(storagePathA) : URL.createObjectURL(fileA);
+      const urlB = storagePathB ? getStorageUrl(storagePathB) : URL.createObjectURL(fileB);
+      const isObjA = !storagePathA, isObjB = !storagePathB;
+      const audioA = new Audio(urlA);
+      const audioB = new Audio(urlB);
+
+      const card = document.createElement('div');
+      card.className = 'duo-card';
+      card.style.left = (100 + cardCount * 20) + 'px';
+      card.style.top = (100 + cardCount * 20) + 'px';
+      card._storagePathA = storagePathA;
+      card._storagePathB = storagePathB;
+      cardCount++;
+
+      card.innerHTML = `
+        <div class="duo-header">
+          <div class="duo-header-left">
+            <span class="duo-label">${SVG.duo} Duo Mode</span>
+            <button class="duo-compact-btn">${SVG.mini} Mini</button>
+          </div>
+          <button class="close-btn">${SVG.close}</button>
+        </div>
+        <div class="duo-visualizers">
+          <div class="duo-viz viz-a">${Array(6).fill('<div class="bar"></div>').join('')}</div>
+          <div class="duo-viz viz-b">${Array(6).fill('<div class="bar"></div>').join('')}</div>
+        </div>
+        <div class="duo-tracks">
+          <div class="duo-track">
+            <div class="duo-track-name"><span class="track-tag">A</span>${fileA.name.replace(/\.[^.]+$/, '')}</div>
+            <div class="time-row"><span class="ct-a">0:00</span><span class="dur-a">0:00</span></div>
+            <input type="range" class="seek-bar seek-a" min="0" value="0" step="0.1" />
+            <div class="duo-vol-row">
+              <button class="duo-mute mute-a">${SVG.volOn}</button>
+              <input type="range" class="vol-bar vol-a" min="0" max="1" step="0.01" value="1" />
+            </div>
+          </div>
+          <div class="duo-track">
+            <div class="duo-track-name"><span class="track-tag">B</span>${fileB.name.replace(/\.[^.]+$/, '')}</div>
+            <div class="time-row"><span class="ct-b">0:00</span><span class="dur-b">0:00</span></div>
+            <input type="range" class="seek-bar seek-b" min="0" value="0" step="0.1" />
+            <div class="duo-vol-row">
+              <button class="duo-mute mute-b">${SVG.volOn}</button>
+              <input type="range" class="vol-bar vol-b" min="0" max="1" step="0.01" value="1" />
+            </div>
+          </div>
+        </div>
+        <div class="duo-controls">
+          <button class="ctrl-btn skip-back-duo">${SVG.skipBack}</button>
+          <button class="ctrl-btn play-btn duo-play-btn">${SVG.play}</button>
+          <button class="ctrl-btn skip-fwd-duo">${SVG.skipFwd}</button>
+        </div>
+      `;
+
+      document.body.appendChild(card);
+
+      const playBtn   = card.querySelector('.duo-play-btn');
+      const vizA      = card.querySelector('.viz-a');
+      const vizB      = card.querySelector('.viz-b');
+      const seekA     = card.querySelector('.seek-a');
+      const seekB     = card.querySelector('.seek-b');
+      const volA      = card.querySelector('.vol-a');
+      const volB      = card.querySelector('.vol-b');
+      const muteA     = card.querySelector('.mute-a');
+      const muteB     = card.querySelector('.mute-b');
+      const ctA       = card.querySelector('.ct-a');
+      const ctB       = card.querySelector('.ct-b');
+      const durA      = card.querySelector('.dur-a');
+      const durB      = card.querySelector('.dur-b');
+
+      let playing = false;
+
+      function setPlaying(val) {
+        playing = val;
+        playBtn.innerHTML = val ? SVG.pause : SVG.play;
+        vizA.classList.toggle('playing', val);
+        vizB.classList.toggle('playing', val);
+      }
+
+      audioA.addEventListener('loadedmetadata', () => { seekA.max = audioA.duration; durA.textContent = formatTime(audioA.duration); });
+      audioB.addEventListener('loadedmetadata', () => { seekB.max = audioB.duration; durB.textContent = formatTime(audioB.duration); });
+
+      audioA.addEventListener('timeupdate', () => {
+        seekA.value = audioA.currentTime;
+        ctA.textContent = formatTime(audioA.currentTime);
+        const pct = (audioA.currentTime / audioA.duration) * 100 || 0;
+        seekA.style.background = `linear-gradient(to right, #f59e0b ${pct}%, rgba(255,255,255,0.2) ${pct}%)`;
+      });
+
+      audioB.addEventListener('timeupdate', () => {
+        seekB.value = audioB.currentTime;
+        ctB.textContent = formatTime(audioB.currentTime);
+        const pct = (audioB.currentTime / audioB.duration) * 100 || 0;
+        seekB.style.background = `linear-gradient(to right, #ef4444 ${pct}%, rgba(255,255,255,0.2) ${pct}%)`;
+      });
+
+      audioA.addEventListener('ended', () => { if (audioB.ended) setPlaying(false); });
+      audioB.addEventListener('ended', () => { if (audioA.ended) setPlaying(false); });
+
+      // Shared play/pause — both start together
+      playBtn.addEventListener('click', () => {
+        if (!playing) {
+          audioA.play(); audioB.play(); setPlaying(true);
+        } else {
+          audioA.pause(); audioB.pause(); setPlaying(false);
+        }
+      });
+
+      // Shared skip
+      card.querySelector('.skip-back-duo').addEventListener('click', () => {
+        audioA.currentTime = Math.max(0, audioA.currentTime - 10);
+        audioB.currentTime = Math.max(0, audioB.currentTime - 10);
+      });
+      card.querySelector('.skip-fwd-duo').addEventListener('click', () => {
+        audioA.currentTime = Math.min(audioA.duration, audioA.currentTime + 10);
+        audioB.currentTime = Math.min(audioB.duration, audioB.currentTime + 10);
+      });
+
+      // Individual seek
+      seekA.addEventListener('input', () => { audioA.currentTime = seekA.value; });
+      seekB.addEventListener('input', () => { audioB.currentTime = seekB.value; });
+
+      // Individual volume
+      volA.addEventListener('input', () => { audioA.volume = volA.value; audioA.muted = false; muteA.innerHTML = volA.value == 0 ? SVG.volOff : SVG.volOn; });
+      volB.addEventListener('input', () => { audioB.volume = volB.value; audioB.muted = false; muteB.innerHTML = volB.value == 0 ? SVG.volOff : SVG.volOn; });
+
+      // Individual mute
+      muteA.addEventListener('click', () => { audioA.muted = !audioA.muted; muteA.innerHTML = audioA.muted ? SVG.volOff : SVG.volOn; });
+      muteB.addEventListener('click', () => { audioB.muted = !audioB.muted; muteB.innerHTML = audioB.muted ? SVG.volOff : SVG.volOn; });
+
+      card.querySelector('.close-btn').addEventListener('click', () => {
+        audioA.pause(); audioB.pause();
+        if (isObjA) URL.revokeObjectURL(urlA);
+        if (isObjB) URL.revokeObjectURL(urlB);
+        card.remove();
+        checkEmpty();
+      });
+
+      card.querySelector('.duo-compact-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isCompact = card.classList.toggle('compact');
+        e.currentTarget.innerHTML = isCompact ? SVG.expand + ' Full' : SVG.mini + ' Mini';
+      });
+
+      makeDraggable(card, card.querySelector('.duo-header'), true);
+      makeResizable(card, 260, 80, 800, 600);
+    }
+
+    function handleFiles(files) {
+      if (!files.length) return;
+      document.getElementById('upload-area').classList.add('hidden');
+      document.getElementById('add-more').style.display = 'flex';
+      document.getElementById('save-load-bar').style.display = 'flex';
+      Array.from(files).forEach(f => createPlayer(f));
+    }
+
+    document.getElementById('file-input').addEventListener('change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
+    document.getElementById('file-input-more').addEventListener('change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
+
+    // ── Home screen "Load from Sessions" button ──
+    document.getElementById('load-sessions-home-btn').addEventListener('click', () => {
+      const panel = document.getElementById('sessions-panel');
+      panel.style.display = 'block';
+      // position panel near center for home screen
+      panel.style.top = '50%';
+      panel.style.left = '50%';
+      panel.style.transform = 'translate(-50%, -30%)';
+      loadSessionsList();
+    });
+
+    // close panel when clicking outside
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('sessions-panel');
+      const loadBtn = document.getElementById('load-btn');
+      const saveBtn = document.getElementById('save-btn');
+      const homeBtn = document.getElementById('load-sessions-home-btn');
+      if (panel.style.display === 'block' &&
+          !panel.contains(e.target) &&
+          e.target !== loadBtn && e.target !== saveBtn && e.target !== homeBtn) {
+        panel.style.display = 'none';
+      }
+    });
+
+  </script>
+</body>
+</html>
